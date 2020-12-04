@@ -1,8 +1,9 @@
 require '../util.rb'
 
-File.readlines('./02.txt').each do |line|
+result = 0
+File.read('./04.txt').split("\n").each do |line|
 
 end
 
-puts
+puts result
 puts "Finished in #{Time.now - @start_time} seconds."
