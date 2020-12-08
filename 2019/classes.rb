@@ -1,42 +1,48 @@
 class IntcodeProcess
   OPS = {
-    1 => { name: :add, size: 4 },
-    2 => { name: :multiply, size: 4 },
-    3 => { name: :input, size: 2 },
-    4 => { name: :output, size: 2 },
-    5 => { name: :jump_if_true, size: 3 },
-    6 => { name: :jump_if_false, size: 3 },
-    7 => { name: :less_than, size: 4 },
-    8 => { name: :equals, size: 4 },
-    99 => { name: :do_exit, size: 1 }
+    1 => { name: :add, signature: [0,1,1,2] },
+    2 => { name: :multiply, signature: [0,1,1,2] },
+    3 => { name: :input, signature: [0,2] },
+    4 => { name: :output, signature: [0,1] },
+    5 => { name: :jump_if_true, signature: [0,1,1] },
+    6 => { name: :jump_if_false, signature: [0,1,1] },
+    7 => { name: :less_than, signature: [0,1,1,2] },
+    8 => { name: :equals, signature: [0,1,1,2] },
+    9 => { name: :adjust_relative_base, signature: [0,1] },
+    99 => { name: :do_exit, signature: [0] }
   }
 
-  attr_accessor :list, :index, :inputs, :outputs, :exited
+  attr_accessor :memory, :index, :inputs, :outputs, :exited, :steps
 
-  def initialize(list, inputs: [])
+  def initialize(program, inputs: [])
     @index = 0
-    @list = list.split(',').map(&:to_i)
+    @memory = Hash.new { |h, k| h[k] = 0 }
+    program.split(',').map(&:to_i).each_with_index do |x, i|
+      memory[i] = x
+    end
     @inputs = inputs
     @exited = false
+    @relative_base = 0
+    @steps = 0
     # @diagnostic = true
   end
 
-  def add(a, b, _c)
-    list[list[@index + 3]] = a + b
-    diagnostic(4, list[@index + 3]) if @diagnostic
+  def add(a, b, c)
+    memory[c] = a + b
+    diagnostic(4, c) if @diagnostic
     true
   end
 
-  def multiply(a, b, _c)
-    list[list[@index + 3]] = a * b
-    diagnostic(4, list[@index + 3]) if @diagnostic
+  def multiply(a, b, c)
+    memory[c] = a * b
+    diagnostic(4, c) if @diagnostic
     true
   end
 
-  def input(_)
+  def input(a)
     return false if @inputs.empty?
-    list[list[@index + 1]] = @inputs.shift
-    diagnostic(2, list[@index + 1]) if @diagnostic
+    memory[a] = @inputs.shift
+    diagnostic(2, a) if @diagnostic
     true
   end
 
@@ -56,15 +62,20 @@ class IntcodeProcess
     true
   end
 
-  def less_than(a, b, _c)
-    list[list[@index + 3]] = a < b ? 1 : 0
-    diagnostic(4, list[@index + 3]) if @diagnostic
+  def less_than(a, b, c)
+    memory[c] = a < b ? 1 : 0
+    diagnostic(4, c) if @diagnostic
     true
   end
 
-  def equals(a, b, _c)
-    list[list[@index + 3]] = a == b ? 1 : 0
-    diagnostic(4, list[@index + 3]) if @diagnostic
+  def equals(a, b, c)
+    memory[c] = a == b ? 1 : 0
+    diagnostic(4, c) if @diagnostic
+    true
+  end
+
+  def adjust_relative_base(a)
+    @relative_base += a
     true
   end
 
@@ -93,20 +104,41 @@ class IntcodeProcess
   end
 
   def process_instruction
-    instruction = list[index]
+    instruction = memory[index]
     op = OPS[instruction % 100]
     return 'error' unless op
-    arguments = (1...(op[:size])).map do |i|
+    arguments = (1...(op[:signature].size)).map do |i|
+      type = op[:signature][i]
       mode = instruction / (10 ** (i + 1)) % 10
-      mode == 1 ? list[index + i] : list[list[index + i]]
+      if type == 1
+        if mode == 0 # position mode
+          memory[memory[index + i]]
+        elsif mode == 1 # immediate mode
+          memory[index + i]
+        elsif mode == 2 # relative mode
+          memory[@relative_base + memory[index + i]]
+        else
+          raise 'Bad mode'
+        end
+      elsif type == 2
+        if mode == 2
+          memory[index + i] + @relative_base
+        else
+          memory[index + i]
+        end
+      else
+        raise 'Bad type'
+      end
     end
     result = send(op[:name], *arguments)
-    @index += op[:size] if result
+    @index += op[:signature].size if result
+    @steps += 1
     result
   end
 
   def diagnostic(arg_count, changed_index)
-    list.each_with_index do |x, i|
+    memory.size.times do |i|
+      x = memory[i]
       print "\e[0m" if i == index + arg_count
       print "\e[0m" if i == changed_index + 1
       print "\e[1m\e[34m" if i == index
