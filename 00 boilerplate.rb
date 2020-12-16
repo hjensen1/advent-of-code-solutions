@@ -1,7 +1,7 @@
 require '../util.rb'
 
 result = 0
-File.read('./15.txt').split("\n").each do |line|
+File.read('./16.txt').split("\n").each do |line|
 
 end
 
