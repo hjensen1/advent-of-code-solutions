@@ -5,7 +5,6 @@ rules = {}
 possible = {}
 valid_values = [false] * 1000
 phase = 1
-sum = 0
 my_ticket = []
 File.read('./16.txt').split("\n").each do |line|
   if line == ''
