@@ -10,3 +10,5 @@ end
 
 puts result
 puts "Finished in #{Time.now - @start_time} seconds."
+
+p File.readlines('./01.txt').map(&:to_i).each_cons(2).count{|(a,b)|b>a}
