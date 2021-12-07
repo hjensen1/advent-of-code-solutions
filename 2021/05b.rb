@@ -5,8 +5,6 @@ File.read('./05.txt').split("\n").each do |line|
   lines << line.split(" -> ").map { |s| s.split(",")}.flatten.map(&:to_i)
 end
 
-# lines.select! { |line| line[0] == line[2] || line[1] == line[3] }
-
 map = Array.new(1000) { [0] * 1000 }
 
 lines.each do |line|
@@ -33,7 +31,6 @@ lines.each do |line|
       y += dy
     end
   end
-  # pp map
 end
 
 p map.map { |line| line.count { |x| x > 1 } }.sum
