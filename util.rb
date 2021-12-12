@@ -1,3 +1,5 @@
+require "set"
+
 def to_point(x, y)
   "#{x},#{y}"
 end
