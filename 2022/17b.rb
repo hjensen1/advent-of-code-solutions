@@ -1,7 +1,5 @@
 require '../util.rb'
 
-OCCUPIED = Set.new([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0]])
-
 class Rock
   attr_accessor :points
   
@@ -47,7 +45,7 @@ class Rock
   end
 
   def blocked?
-    points.any? { |p| OCCUPIED.include?(p) || p[0] < 0 || p[0] > 6 }
+    points.any? { |p| Solver.occupied.include?(p) || p[0] < 0 || p[0] > 6 }
   end
 end
 
@@ -81,115 +79,142 @@ class Square < Rock
   end
 end
 
-jets = File.read('./17.txt').chomp.split("")
-rocks = [Row, T, J, I, Square]
-height = 0
-shapes = { 0 => { [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0]] => [0, 0] } }
+class Solver
+  MAX = 1000000000000
 
-start_index, start_height, start_shape, end_index, end_height = nil, nil, nil, nil, nil
-(1..1000000000000).each do |i|
-  klass = rocks.shift
-  rocks << klass
-  rock = klass.new(2, height + 4)
-  loop do
-    jet = jets.shift
-    jets << jet
-    jet == '>' ? rock.right : rock.left
-    # p rock.points.last
-    done = rock.down
-    # p rock.points.last
-    if done
-      rock.points.each do |x, y|
-        OCCUPIED << [x, y]
-        height = y if y >= height
+  attr_accessor :jets, :rocks, :height, :shapes, :jet_count, :rock_count, :occupied,
+    :start_jet, :end_jet, :start_rock, :end_rock, :start_height, :end_height
+
+  def initialize
+    @jets = File.read('./17.txt').chomp.split("")
+    @rocks = [Row, T, J, I, Square]
+    @height = 0
+    @jet_count = 0
+    @rock_count = 0
+    floor = [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0]]
+    @shapes = { 0 => { floor => [0, 0, 0] } }
+    @occupied = Set.new(floor)
+    self.class.occupied = occupied
+  end
+
+  class << self
+    attr_accessor :occupied
+  end
+
+  def execute
+    puts "drop_rocks"
+    drop_rocks { check_for_cycle }
+    puts "skip_ahead"
+    skip_ahead
+    puts "drop_rocks"
+    drop_rocks
+    height
+  end
+
+  def drop_rocks(&block)
+    while rock_count < MAX
+      drop_rock
+      if block
+        done = yield
+        return if done
       end
-      break
     end
   end
 
-  shape = Set.new
-  empty = Set.new
-  queue = (0..6).map { |x| [x, height] }
-  while !queue.empty?
-    point = queue.pop
-    x, y = point
-    if OCCUPIED.include?(point)
-      shape << [x, y - height]
-    elsif !empty.include?(point)
-      empty << point
-      queue << [x - 1, y] if x > 0
-      queue << [x + 1, y] if x < 6
-      queue << [x, y - 1]
-    end
-  end
-  index = i % (jets.size * 5)
-  shapes[index] ||= {}
-  if shapes[index][shape]
-    start_index, start_height = shapes[index][shape]
-    start_shape = shape
-    end_index = i
-    end_height = height
-    break
-  else
-    shapes[index][shape] = [i, height]
-  end
-end
-
-((height-15)..height).to_a.reverse.each do |y|
-  (0..6).each do |x|
-    if OCCUPIED.include?([x, y])
-      print "#"
-    else
-      print "."
-    end
-  end
-  puts
-end
-
-p [start_index, end_index, start_height, end_height, start_shape]
-steps = 1000000000000
-cycle_length = end_index - start_index
-cycle_height = end_height - start_height
-height = steps / cycle_length * cycle_height + start_height
-remaining_steps = (steps - steps / cycle_length * cycle_length - start_index)
-
-OCCUPIED.clear
-start_shape.each do |x, y|
-  OCCUPIED << [x, height + y]
-end
-
-((height-15)..height).to_a.reverse.each do |y|
-  (0..6).each do |x|
-    if OCCUPIED.include?([x, y])
-      print "#"
-    else
-      print "."
-    end
-  end
-  puts
-end
-
-remaining_steps.times do |i|
-  klass = rocks.shift
-  rocks << klass
-  rock = klass.new(2, height + 4)
-  loop do
-    jet = jets.shift
-    jets << jet
-    jet == '>' ? rock.right : rock.left
-    # p rock.points.last
-    done = rock.down
-    # p rock.points.last
-    if done
-      rock.points.each do |x, y|
-        OCCUPIED << [x, y]
-        height = y if y >= height
+  def drop_rock(&block)
+    rock = rocks[rock_count % 5].new(2, height + 4)
+    loop do
+      jet = jets[jet_count % jets.size]
+      @jet_count += 1
+      jet == '>' ? rock.right : rock.left
+      done = rock.down
+      if done
+        rock.points.each do |x, y|
+          occupied << [x, y]
+          @height = y if y >= height
+        end
+        break
       end
-      break
     end
+    @rock_count += 1
+  end
+
+  def check_for_cycle
+    shape = compute_top_shape
+    jet_mod = jet_count % jets.size
+    rock_mod = rock_count % 5
+    shapes[jet_mod] ||= {}
+    past_shapes = (shapes[jet_mod][rock_mod] ||= {})
+    if past_shapes[shape]
+      @start_jet, @start_rock, @start_height = past_shapes[shape]
+      @end_jet = jet_count
+      @end_rock = rock_count
+      @end_height = height
+      true
+    else
+      past_shapes[shape] = [jet_count, rock_count, height]
+      false
+    end
+  end
+
+  def compute_top_shape
+    new_occupied = Set.new
+    shape = Set.new
+    empty = Set.new
+    stack = (0..6).map { |x| [x, height] }
+    while !stack.empty?
+      point = stack.pop
+      x, y = point
+      if occupied.include?(point)
+        shape << [x, y - height]
+        new_occupied << point
+      elsif !empty.include?(point)
+        empty << point
+        stack << [x - 1, y] if x > 0
+        stack << [x + 1, y] if x < 6
+        stack << [x, y - 1]
+      end
+    end
+    @occupied = new_occupied
+    self.class.occupied = new_occupied
+    shape
+  end
+
+  def skip_ahead
+    p [start_jet, end_jet, start_rock, end_rock, start_height, end_height]
+    cycle_jets = end_jet - start_jet
+    cycle_rocks = end_rock - start_rock
+    cycle_height = end_height - start_height
+    cycle_count = (MAX - end_rock) / cycle_rocks # already went through one cycle
+    @height += cycle_count * cycle_height
+    @jet_count += cycle_count * cycle_jets
+    @rock_count += cycle_count * cycle_rocks
+    new_occupied = Set.new
+    occupied.each do |x, y|
+      new_occupied << [x, y + cycle_count * cycle_height]
+    end
+    @occupied = new_occupied
+    self.class.occupied = occupied
+  end
+
+  def print_top
+    ((height-15)..height).to_a.reverse.each do |y|
+      (0..6).each do |x|
+        if occupied.include?([x, y])
+          print "#"
+        else
+          print "."
+        end
+      end
+      puts
+    end
+    puts
+    puts
   end
 end
 
-puts height
+
+
+puts Solver.new.execute
 
 puts "Finished in #{Time.now - @start_time} seconds."
